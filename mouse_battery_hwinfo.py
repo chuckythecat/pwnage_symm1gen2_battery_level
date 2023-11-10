@@ -12,7 +12,7 @@ import os
 vid = 0x25a7
 pid = 0xfa59
 
-checkEvery = 10
+checkEvery = 3600
 
 class DeviceListener:
     """
@@ -41,14 +41,19 @@ class DeviceListener:
         self.isConnected = False
         self.request_battery_level_message = [0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x49]
         self.received = False
-
+        self.dir_path = os.path.dirname(os.path.realpath(__file__))
         self.hwinfo = wrg.CreateKeyEx(wrg.HKEY_CURRENT_USER, r"SOFTWARE\\HWiNFO64\\Sensors\\Custom")
-        self.phone = wrg.CreateKeyEx(self.hwinfo, r"Mouse")
-        self.charge = wrg.CreateKeyEx(self.phone, r"Other0")
+        self.mouse = wrg.CreateKeyEx(self.hwinfo, r"Mouse")
+        self.charge = wrg.CreateKeyEx(self.mouse, r"Other0")
         wrg.SetValueEx(self.charge, "Name", 0, wrg.REG_SZ, "Mouse battery")
         wrg.SetValueEx(self.charge, "Value", 0, wrg.REG_SZ, "0")
         wrg.SetValueEx(self.charge, "Unit", 0, wrg.REG_SZ, "/10")
 
+        self.myicon = icon('Mouse battery', Image.open(fr"{self.dir_path}\\mouse.png"), menu=menu(
+            item("Exit", self.kill, default=True)
+        ))
+
+        self.myicon.run_detached()
         self.on_change()
         self.timerChecker()
 
@@ -133,13 +138,16 @@ class DeviceListener:
         else:
             print("device disconnected")
             self.isConnected = False
+            self.myicon.icon = Image.open(fr"{self.dir_path}\\Disconnected.png")
 
     def battery_level_handler(self, data):
         print("Raw data: {0}".format(data))
         print(f"Battery level: {data[6]*10}%")
         if data[6] == 0:
+            self.myicon.icon = Image.open(fr"{self.dir_path}\\MouseNotResponding.png")
             print("Mouse battery reported as 0% because mouse was never moved after dongle was connected.")
         else:
+            self.myicon.icon = Image.open(fr"{self.dir_path}\\mouse.png")
             wrg.SetValueEx(self.charge, "Value", 0, wrg.REG_SZ, str(data[6]))
         self.received = True
         return
@@ -150,19 +158,12 @@ class DeviceListener:
         print("running scheduled battery check...")
         self.sendBatteryLevelRequest()
 
-def kill():
-    global listener
-    listener.nextTimer.cancel()
-    myicon.stop()
-    wrg.SetValueEx(listener.charge, "Value", 0, wrg.REG_SZ, "0")
-    os._exit(0)
+    def kill(self):
+        self.nextTimer.cancel()
+        self.myicon.stop()
+        wrg.SetValueEx(self.charge, "Value", 0, wrg.REG_SZ, "0")
+        os._exit(0)
 
 if __name__ == '__main__':
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    myicon = icon('Phone battery', Image.open(fr"{dir_path}\\mouse.png"), menu=menu(
-            item("Exit", kill, default=True)
-    ))
-
-    myicon.run_detached()
     listener = DeviceListener(vid, pid, checkEvery)
     listener.start()
